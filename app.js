@@ -7,6 +7,9 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const bcrypt = require('bcryptjs');
+const saltRounds = 10;
+const hash = 'YOUR_HASH_STRING';
 
 const mongoDb =
   'mongodb+srv://bry123:bry123@cluster0.qx7so.mongodb.net/authentication?retryWrites=true&w=majority';
@@ -37,13 +40,36 @@ passport.use(
       if (!user) {
         return done(null, false, { msg: 'Incorrect username' });
       }
-      if (user.password !== password) {
-        return done(null, false, { msg: 'Incorrect password' });
-      }
+      // if (passwordMatches(user.password)) {
+      //   return done(null, user);
+      // } else {
+      //   return done(null, false, { msg: 'Incorrect password' });
+      // }
+      bcrypt.compare(password, user.password, (err, res) => {
+        if (res) {
+          // passwords match! log user in
+          return done(null, user);
+        } else {
+          // passwords do not match!
+          return done(null, false, { msg: 'Incorrect password' });
+        }
+      });
       return done(null, user);
     });
   })
 );
+
+function passwordMatches(passwordEnteredByUser) {
+  bcrypt.compare(passwordEnteredByUser, hash, function (err, isMatch) {
+    if (err) {
+      throw err;
+    } else if (!isMatch) {
+      console.log("Password doesn't match!");
+    } else {
+      console.log('Password matches!');
+    }
+  });
+}
 
 passport.serializeUser(function (user, done) {
   done(null, user.id);
@@ -76,16 +102,48 @@ app.listen(3000, () => console.log('app listening on port 3000!'));
 
 app.get('/sign-up', (req, res) => res.render('sign-up-form'));
 
-app.post('/sign-up', (req, res, next) => {
-  const user = new User({
-    username: req.body.username,
-    password: req.body.password
-  }).save(err => {
-    if (err) {
-      return next(err);
-    }
-    res.redirect('/');
+app.post('/sign-up', async (req, res, next) => {
+  // https://stackoverflow.com/questions/50791437/proper-usage-of-promise-await-and-async-function
+  // generate a salt
+  (async function () {
+    const salt = await bcrypt.genSalt(10);
+
+    // hash the password along with our new salt
+    const txtPassword = await bcrypt.hash(req.body.password, salt);
+    let newUser = new User({
+      username: req.body.username,
+      password: txtPassword
+    });
+    await newUser.save(err => {
+      if (err) {
+        return next(err);
+      }
+      console.log('New user has been added successfully with Id');
+      res.redirect('/');
+    }); // *** Assumes a new promise-enabled `save`
+
+    // req.flash('success', 'Registeration Successful');
+
+    // console.log('Session value ', req.session);
+    // console.log('value of txt password => ', txtPassword);
+    // res.render('blogHome', { title: 'Blogs || Home' });
+  })().catch(err => {
+    // handle error
   });
+
+  // const hashedPassword = await bcrypt.hash(req.body.password, 10);
+  // hashedPassword.then(password => {
+  //   const user = new User({
+  //     username: req.body.username,
+  //     password: password
+  //   }).save(err => {
+  //     if (err) {
+  //       return next(err);
+  //     }
+  //     res.redirect('/');
+  //   });
+  // });
+  // });
 });
 
 app.post(
